@@ -1,19 +1,19 @@
 use futures_util::StreamExt;
 use mongodb::{
-    bson::{doc, from_document, oid::ObjectId, DateTime, Document},
+    bson::{doc, oid::ObjectId, Document},
     options::UpdateModifications,
     results::{DeleteResult, InsertOneResult, UpdateResult},
     Client, Collection, Database,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
+use std::str::FromStr;
 use std::{
-    env, error,
+    env,
     io::{
         Error,
         ErrorKind::{self, InvalidInput, Other},
     },
 };
-use std::{ptr::null, str::FromStr};
 
 use crate::{
     models::{email_list_model::EmailList, subscriber_model::Subscriber, user_model::User},
@@ -23,37 +23,9 @@ use crate::{
 pub struct Storage {
     client: Client,
     db: Database,
-    email_list: Collection<EmailList>,
-    subscriber: Collection<Subscriber>,
-    user: Collection<User>,
-}
-
-enum CollName {
-    EmailList,
-    Subscriber,
-    User,
-}
-
-pub trait CollectionTrait: Send + Sync {
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-impl CollectionTrait for Collection<EmailList> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-impl CollectionTrait for Collection<Subscriber> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-impl CollectionTrait for Collection<User> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+    pub email_list: Collection<EmailList>,
+    pub subscriber: Collection<Subscriber>,
+    pub user: Collection<User>,
 }
 
 impl Storage {
@@ -71,7 +43,7 @@ impl Storage {
     pub async fn init() -> Result<Self, Error> {
         let uri = match env::var("MONGO_URI") {
             Ok(v) => v.to_string(),
-            Err(_) => "mongodb://localhost:27018/?directConnection=true".to_string(),
+            Err(_) => "mongodb://localhost:4444/?directConnection=true".to_string(),
         };
         match Client::with_uri_str(uri).await {
             Ok(client) => Ok(Storage::new(client)),
@@ -79,52 +51,44 @@ impl Storage {
         }
     }
 
-    fn get_coll<D: Send + Sync>(&self, coll_name: CollName) -> &Collection<D> {
-        match coll_name {
-            CollName::EmailList => &self.email_list,
-            CollName::Subscriber => &self.subscriber,
-            CollName::User => &self.user,
-        }
-    }
-
     pub async fn get_all<D: Send + Sync + DeserializeOwned>(
         &self,
-        coll_name: CollName,
+        coll: &Collection<D>,
     ) -> Result<Vec<D>, Error> {
-        get_many_docs(self.get_coll(coll_name), None).await
+        get_many_docs(coll, None).await
     }
 
     pub async fn get_one_by_id<D: Send + Sync + DeserializeOwned>(
         &self,
-        coll_name: CollName,
+        coll: &Collection<D>,
         id: &str,
     ) -> Result<D, Error> {
-        get_doc_by_id(self.get_coll(coll_name), id).await
+        get_doc_by_id(coll, id).await
     }
 
     pub async fn insert_new<D: Send + Sync + Serialize>(
         &self,
-        coll_name: CollName,
-        doc: Document,
+        coll: &Collection<D>,
+        doc: D,
     ) -> Result<InsertOneResult, Error> {
-        insert_new_doc(self.get_coll(coll_name), doc).await
+        insert_new_doc(coll, doc).await
     }
 
     pub async fn update_one_by_id<D: Send + Sync>(
         &self,
-        coll_name: CollName,
+        coll: &Collection<D>,
         id: &str,
         update: impl Into<UpdateModifications>,
     ) -> Result<UpdateResult, Error> {
-        update_doc_by_id(self.get_coll(coll_name), id, update).await
+        update_doc_by_id(coll, id, update).await
     }
 
     pub async fn delete_one_by_id<D: Send + Sync>(
         &self,
-        coll_name: CollName,
+        coll: &Collection<D>,
         id: &str,
     ) -> Result<DeleteResult, Error> {
-        delete_doc_by_id(self.get_coll(coll_name), id).await
+        delete_doc_by_id(coll, id).await
     }
 }
 
